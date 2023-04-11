@@ -292,30 +292,24 @@ impl<C> ProxyConnector<C> {
 
         #[cfg(feature = "rustls")]
         {
-            let certs = rustls_native_certs::load_native_certs()?.into_iter().map(|der| {
-                let anchor = webpki::TrustAnchor::try_from_cert_der(&der.0).map_err(io_err)?;
-
-                Ok(tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                    anchor.subject,
-                    anchor.spki,
-                    anchor.name_constraints,
-                ))
-            }).collect::<Result<Vec<_>, io::Error>>()?;
-
-            roots.add_server_trust_anchors(certs.into_iter());
+            for cert in rustls_native_certs::load_native_certs()? {
+                roots
+                    .add(&tokio_rustls::rustls::Certificate(cert.0))
+                    .map_err(io_err)?;
+            }
         }
 
         #[cfg(feature = "rustls-webpki")]
         {
-            let certs = webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|anchor| {
-                tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                    anchor.subject,
-                    anchor.spki,
-                    anchor.name_constraints,
-                )
-            }).collect::<Vec<_>>();
-
-            roots.add_server_trust_anchors(certs.into_iter());
+            roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.into_iter().map(
+                |ta| {
+                    tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        ta.subject,
+                        ta.spki,
+                        ta.name_constraints,
+                    )
+                },
+            ));
         }
 
         let config = tokio_rustls::rustls::ClientConfig::builder()
